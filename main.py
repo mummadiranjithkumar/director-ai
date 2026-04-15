@@ -89,8 +89,14 @@ async def generate_video(
 
         queue_service.add_job(job_data)
 
-        # Send to worker
-        process_video_job.delay(job_id, json.dumps(job_data))
+        # Send to worker (synchronous if TEST_MODE, else Celery)
+        test_mode = os.getenv("TEST_MODE", "false").lower() == "true"
+        if test_mode:
+            # Run synchronously for deployment
+            process_video_job(job_id, json.dumps(job_data))
+        else:
+            # Use Celery for production
+            process_video_job.delay(job_id, json.dumps(job_data))
 
         return JSONResponse({
             "success": True,
