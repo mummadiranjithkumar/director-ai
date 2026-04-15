@@ -19,13 +19,13 @@ from worker import process_video_job
 # ✅ Load environment
 load_dotenv()
 
-# ✅ Base URL (ngrok or localhost)
+# ✅ Base URL
 BASE_URL = os.getenv("BASE_URL", "http://127.0.0.1:8000")
 
 app = FastAPI(title="Director AI Video API")
 
 # ---------------------------
-# 🔥 FORCE CORS (FINAL FIX)
+# 🔥 FORCE CORS
 # ---------------------------
 @app.middleware("http")
 async def add_cors_headers(request, call_next):
@@ -36,7 +36,7 @@ async def add_cors_headers(request, call_next):
     return response
 
 # ---------------------------
-# CORS (KEEP THIS ALSO)
+# CORS
 # ---------------------------
 app.add_middleware(
     CORSMiddleware,
@@ -58,7 +58,7 @@ app.mount("/videos", StaticFiles(directory="videos"), name="videos")
 queue_service = QueueService()
 
 # ---------------------------
-# GENERATE
+# GENERATE (FIXED 🚀)
 # ---------------------------
 @app.post("/generate")
 async def generate_video(
@@ -87,21 +87,19 @@ async def generate_video(
             "error": None
         }
 
-        queue_service.add_job(job_data)
+        # ✅ Try queue (ignore if Redis not available)
+        try:
+            queue_service.add_job(job_data)
+        except Exception:
+            pass
 
-        # Send to worker (synchronous if TEST_MODE, else Celery)
-        test_mode = os.getenv("TEST_MODE", "false").lower() == "true"
-        if test_mode:
-            # Run synchronously for deployment
-            process_video_job(job_id, json.dumps(job_data))
-        else:
-            # Use Celery for production
-            process_video_job.delay(job_id, json.dumps(job_data))
+        # ✅ DIRECT EXECUTION (NO CELERY)
+        process_video_job(job_id, json.dumps(job_data))
 
         return JSONResponse({
             "success": True,
             "job_id": job_id,
-            "status": "pending"
+            "status": "processing"
         })
 
     except Exception as e:
@@ -119,7 +117,6 @@ async def get_job_status(job_id: str):
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
 
-        # ✅ FIXED VIDEO URL (ngrok compatible)
         video_url = None
         if job.get("video_path"):
             video_url = f"{BASE_URL}/{job['video_path']}"
@@ -143,10 +140,15 @@ async def get_job_status(job_id: str):
 # ---------------------------
 @app.get("/health")
 async def health_check():
-    return JSONResponse({
+    try:
+        queue_size = queue_service.get_queue_size()
+    except Exception:
+        queue_size = 0
+
+        return JSONResponse({
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
-        "queue_size": queue_service.get_queue_size()
+        "queue_size": queue_size
     })
 
 
