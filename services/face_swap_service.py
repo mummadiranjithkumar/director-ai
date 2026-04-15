@@ -20,6 +20,12 @@ class FaceSwapService:
     async def swap_face(self, source_image_path: str, target_image_path: str = None) -> str:
         """Apply face swap to source image using target image."""
         
+        test_mode = os.getenv("TEST_MODE", "false").lower() == "true"
+        
+        if test_mode:
+            print("TEST_MODE: Returning mock face swap response")
+            return {"status": "test success", "type": "face_swap"}
+        
         try:
             # Use default target if none provided
             if not target_image_path:

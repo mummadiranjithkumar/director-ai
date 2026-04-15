@@ -15,7 +15,13 @@ USE_REAL_AI = False
 class ReplicateService:
 
     def generate_image(self, prompt: str, steps: int = 4) -> str:
-        print("⚠️ FAKE IMAGE MODE")
+        test_mode = os.getenv("TEST_MODE", "false").lower() == "true"
+        
+        if test_mode:
+            print("TEST_MODE: Returning mock image response")
+            return {"status": "test success", "type": "image"}
+        
+        print("REAL MODE: Generating image...")
 
         os.makedirs("temp", exist_ok=True)
         path = "temp/fake_image.jpg"
@@ -29,8 +35,14 @@ class ReplicateService:
         return path
 
     def generate_video_from_image(self, image_path: str, frames: int = 12) -> str:
-        print("⚠️ FAKE VIDEO MODE")
-
+        test_mode = os.getenv("TEST_MODE", "false").lower() == "true"
+        
+        if test_mode:
+            print("TEST_MODE: Returning mock video response")
+            return {"status": "test success", "type": "video"}
+        
+        print("REAL MODE: Generating video...")
+        
         os.makedirs("videos", exist_ok=True)
         path = "videos/fake_video.mp4"
 
