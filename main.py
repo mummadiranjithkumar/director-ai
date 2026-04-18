@@ -1,8 +1,8 @@
 import os
 import json
 import uuid
-from dotenv import load_dotenv
 from datetime import datetime
+from dotenv import load_dotenv
 
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,16 +11,23 @@ from fastapi.responses import JSONResponse, Response
 
 from worker import process_video_job
 
+# ---------------------------
+# ENV
+# ---------------------------
 load_dotenv()
 
 BASE_URL = os.getenv("BASE_URL", "https://director-ai.onrender.com")
 
 app = FastAPI(title="Director AI Video API")
 
-# In-memory job storage (TEMP FIX)
+# ---------------------------
+# TEMP MEMORY STORAGE
+# ---------------------------
 JOBS = {}
 
+# ---------------------------
 # CORS
+# ---------------------------
 @app.middleware("http")
 async def add_cors_headers(request, call_next):
     response: Response = await call_next(request)
@@ -37,7 +44,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Static
+# ---------------------------
+# STATIC FILES
+# ---------------------------
 os.makedirs("videos", exist_ok=True)
 app.mount("/videos", StaticFiles(directory="videos"), name="videos")
 
@@ -70,16 +79,19 @@ async def generate_video(
             "error": None
         }
 
-        # SAVE IN MEMORY
+        # Save initial job
         JOBS[job_id] = job_data
 
-        # RUN DIRECTLY (NO CELERY)
-        process_video_job(job_id, json.dumps(job_data))
+        # Process synchronously
+        updated_job = process_video_job(job_id, json.dumps(job_data))
+
+        # Save updated job
+        JOBS[job_id] = updated_job
 
         return {
             "success": True,
             "job_id": job_id,
-            "status": "processing"
+            "status": updated_job["status"]
         }
 
     except Exception as e:
