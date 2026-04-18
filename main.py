@@ -1,11 +1,7 @@
-"""
-Director AI Video App - Scalable FastAPI Backend (FINAL STABLE)
-"""
 import os
 import json
 import uuid
 from dotenv import load_dotenv
-
 from datetime import datetime
 
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
@@ -13,20 +9,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, Response
 
-from services.queue_service import QueueService
 from worker import process_video_job
 
-# ✅ Load environment
 load_dotenv()
 
-# ✅ Base URL
-BASE_URL = os.getenv("BASE_URL", "http://127.0.0.1:8000")
+BASE_URL = os.getenv("BASE_URL", "https://director-ai.onrender.com")
 
 app = FastAPI(title="Director AI Video API")
 
-# ---------------------------
-# 🔥 FORCE CORS
-# ---------------------------
+# In-memory job storage (TEMP FIX)
+JOBS = {}
+
+# CORS
 @app.middleware("http")
 async def add_cors_headers(request, call_next):
     response: Response = await call_next(request)
@@ -35,9 +29,6 @@ async def add_cors_headers(request, call_next):
     response.headers["Access-Control-Allow-Methods"] = "*"
     return response
 
-# ---------------------------
-# CORS
-# ---------------------------
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -46,19 +37,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---------------------------
-# STATIC FILES
-# ---------------------------
+# Static
 os.makedirs("videos", exist_ok=True)
 app.mount("/videos", StaticFiles(directory="videos"), name="videos")
 
 # ---------------------------
-# SERVICES
-# ---------------------------
-queue_service = QueueService()
-
-# ---------------------------
-# GENERATE (FIXED 🚀)
+# GENERATE
 # ---------------------------
 @app.post("/generate")
 async def generate_video(
@@ -68,7 +52,6 @@ async def generate_video(
     try:
         job_id = str(uuid.uuid4())
 
-        # Save face image
         face_path = None
         if face_image and face_image.filename:
             os.makedirs("temp", exist_ok=True)
@@ -79,7 +62,7 @@ async def generate_video(
 
         job_data = {
             "id": job_id,
-            "status": "pending",
+            "status": "processing",
             "prompt": prompt,
             "face_path": face_path,
             "created_at": datetime.now().isoformat(),
@@ -87,20 +70,17 @@ async def generate_video(
             "error": None
         }
 
-        # ✅ Try queue (ignore if Redis not available)
-        try:
-            queue_service.add_job(job_data)
-        except Exception:
-            pass
+        # SAVE IN MEMORY
+        JOBS[job_id] = job_data
 
-        # ✅ DIRECT EXECUTION (NO CELERY)
+        # RUN DIRECTLY (NO CELERY)
         process_video_job(job_id, json.dumps(job_data))
 
-        return JSONResponse({
+        return {
             "success": True,
             "job_id": job_id,
             "status": "processing"
-        })
+        }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -110,46 +90,23 @@ async def generate_video(
 # STATUS
 # ---------------------------
 @app.get("/status/{job_id}")
-async def get_job_status(job_id: str):
-    try:
-        job = queue_service.get_job(job_id)
+async def get_status(job_id: str):
+    job = JOBS.get(job_id)
 
-        if not job:
-            raise HTTPException(status_code=404, detail="Job not found")
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
 
-        video_url = None
-        if job.get("video_path"):
-            video_url = f"{BASE_URL}/{job['video_path']}"
+    video_url = None
+    if job.get("video_path"):
+        video_url = f"{BASE_URL}/{job['video_path']}"
 
-        return JSONResponse({
-            "success": True,
-            "job_id": job_id,
-            "status": job["status"],
-            "video_url": video_url,
-            "error": job.get("error"),
-            "created_at": job["created_at"],
-            "updated_at": job.get("updated_at")
-        })
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ---------------------------
-# HEALTH
-# ---------------------------
-@app.get("/health")
-async def health_check():
-    try:
-        queue_size = queue_service.get_queue_size()
-    except Exception:
-        queue_size = 0
-
-        return JSONResponse({
-        "status": "healthy",
-        "timestamp": datetime.now().isoformat(),
-        "queue_size": queue_size
-    })
+    return {
+        "success": True,
+        "job_id": job_id,
+        "status": job["status"],
+        "video_url": video_url,
+        "error": job.get("error")
+    }
 
 
 # ---------------------------
@@ -157,12 +114,4 @@ async def health_check():
 # ---------------------------
 @app.get("/")
 async def root():
-    return JSONResponse({
-        "message": "Director AI Video API",
-        "version": "1.0.0"
-    })
-
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    return {"message": "Director AI running 🚀"}
