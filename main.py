@@ -4,7 +4,6 @@ import uuid
 from datetime import datetime
 
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
-from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -13,6 +12,7 @@ from worker import process_video_job
 
 app = FastAPI()
 
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -35,7 +35,6 @@ async def generate_video(
     try:
         job_id = str(uuid.uuid4())
 
-        # Save face image if provided
         face_path = None
         if face_image and face_image.filename:
             os.makedirs("temp", exist_ok=True)
@@ -55,8 +54,8 @@ async def generate_video(
 
         queue_service.add_job(job_data)
 
-        # Run synchronously (IMPORTANT for Render free tier)
-        process_video_job(job_id, json.dumps(job_data))
+        # 🔥 IMPORTANT FIX (shared queue)
+        process_video_job(job_id, json.dumps(job_data), queue_service)
 
         return {
             "success": True,
@@ -77,7 +76,6 @@ async def get_status(job_id: str):
 
     video_url = None
     if job.get("video_path"):
-        # Use dynamic BASE_URL for Render compatibility
         base_url = os.getenv("BASE_URL", "https://director-ai.onrender.com")
         video_url = f"{base_url}/videos/{job_id}.mp4"
 
@@ -85,18 +83,15 @@ async def get_status(job_id: str):
         "success": True,
         "status": job["status"],
         "video_url": video_url,
-        "error": job.get("error"),
-        "created_at": job.get("created_at"),
-        "updated_at": job.get("updated_at")
+        "error": job.get("error")
     }
 
 
 @app.get("/health")
-async def health_check():
+async def health():
     return {
         "status": "healthy",
-        "queue_size": queue_service.get_queue_size(),
-        "timestamp": datetime.now().isoformat()
+        "queue_size": queue_service.get_queue_size()
     }
 
 
