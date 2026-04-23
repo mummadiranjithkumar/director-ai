@@ -17,7 +17,7 @@ class FaceSwapService:
         # Default target image
         self.default_target = os.path.join(self.assets_dir, "default_target.jpg")
     
-    async def swap_face(self, source_image_path: str, target_image_path: str = None) -> str:
+    def swap_face(self, source_image_path: str, target_image_path: str = None) -> str:
         """Apply face swap to source image using target image."""
         
         test_mode = os.getenv("TEST_MODE", "false").lower() == "true"

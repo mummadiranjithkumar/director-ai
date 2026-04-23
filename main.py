@@ -35,12 +35,22 @@ async def generate_video(
     try:
         job_id = str(uuid.uuid4())
 
+        # Save face image if provided
+        face_path = None
+        if face_image and face_image.filename:
+            os.makedirs("temp", exist_ok=True)
+            face_path = f"temp/{job_id}.jpg"
+            with open(face_path, "wb") as f:
+                f.write(await face_image.read())
+
         job_data = {
             "id": job_id,
             "status": "pending",
             "prompt": prompt,
+            "face_path": face_path,
             "created_at": datetime.now().isoformat(),
-            "video_path": None
+            "video_path": None,
+            "error": None
         }
 
         queue_service.add_job(job_data)
@@ -51,7 +61,7 @@ async def generate_video(
         return {
             "success": True,
             "job_id": job_id,
-            "status": "completed"
+            "status": "pending"
         }
 
     except Exception as e:
@@ -63,16 +73,30 @@ async def get_status(job_id: str):
     job = queue_service.get_job(job_id)
 
     if not job:
-        return {"detail": "Job not found"}
+        raise HTTPException(status_code=404, detail="Job not found")
 
     video_url = None
     if job.get("video_path"):
-        video_url = f"https://director-ai.onrender.com/{job['video_path']}"
+        # Use dynamic BASE_URL for Render compatibility
+        base_url = os.getenv("BASE_URL", "https://director-ai.onrender.com")
+        video_url = f"{base_url}/videos/{job_id}.mp4"
 
     return {
         "success": True,
         "status": job["status"],
-        "video_url": video_url
+        "video_url": video_url,
+        "error": job.get("error"),
+        "created_at": job.get("created_at"),
+        "updated_at": job.get("updated_at")
+    }
+
+
+@app.get("/health")
+async def health_check():
+    return {
+        "status": "healthy",
+        "queue_size": queue_service.get_queue_size(),
+        "timestamp": datetime.now().isoformat()
     }
 
 
